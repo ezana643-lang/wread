@@ -1,0 +1,183 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { postsApi, ApiError } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
+
+export function PostFeed() {
+  const [posts,   setPosts]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState('');
+  const [page,    setPage]    = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const LIMIT = 20;
+
+  const load = useCallback(async (offset = 0, replace = true) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await postsApi.list({ limit: LIMIT, offset });
+      setPosts(prev => replace ? res.data.posts : [...prev, ...res.data.posts]);
+      setHasMore(res.data.pagination.hasMore);
+      setPage(offset);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(0); }, [load]);
+
+  if (loading && posts.length === 0) return <p className="state-message">Gönderiler yükleniyor…</p>;
+
+  if (error) return (
+    <div className="state-error" role="alert">
+      <p>{error}</p>
+      <button className="btn btn--secondary" onClick={() => load(0)}>Tekrar Dene</button>
+    </div>
+  );
+
+  if (!loading && posts.length === 0) return (
+    <div className="empty-state">
+      <p className="empty-state__icon">📭</p>
+      <p className="empty-state__message">Henüz hiç gönderi yok.</p>
+      <p className="empty-state__hint">İlk gönderiyi paylaşan siz olun.</p>
+    </div>
+  );
+
+  return (
+    <section aria-label="Gönderi akışı">
+      <ul className="post-feed" role="list">
+        {posts.map(post => (
+          <li key={post.id}>
+            <PostCard post={post} onDelete={() => load(0)} />
+          </li>
+        ))}
+      </ul>
+      {hasMore && (
+        <div className="feed-more">
+          <button className="btn btn--secondary" onClick={() => load(page + LIMIT, false)} disabled={loading}>
+            {loading ? 'Yükleniyor…' : 'Daha Fazla Göster'}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function PostCard({ post, onDelete }) {
+  const { user } = useAuth();
+  const [deleting, setDeleting] = useState(false);
+  const isOwner = user && user.id === post.author_id;
+  const isMod   = user && ['moderator', 'admin'].includes(user.role);
+
+  async function handleDelete() {
+    if (!window.confirm('Bu gönderiyi silmek istediğinizden emin misiniz?')) return;
+    setDeleting(true);
+    try {
+      await postsApi.remove(post.id);
+      onDelete?.();
+    } catch (err) {
+      alert(err.message);
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <article className="post-card">
+      <header className="post-card__header">
+        <div className="post-card__author">
+          <div className="avatar avatar--sm" aria-hidden="true">
+            {post.author_display_name?.[0] || post.author_username?.[0] || '?'}
+          </div>
+          <div>
+            <span className="post-card__author-name">{post.author_display_name || post.author_username}</span>
+            <span className="post-card__author-handle">@{post.author_username}</span>
+          </div>
+        </div>
+        <time className="post-card__date" dateTime={post.created_at}>
+          {new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(post.created_at))}
+        </time>
+      </header>
+      <Link to={`/gonderiler/${post.id}`} className="post-card__link">
+        <h2 className="post-card__title">{post.title}</h2>
+        <p className="post-card__excerpt">{post.content.length > 200 ? post.content.slice(0, 200) + '…' : post.content}</p>
+      </Link>
+      <footer className="post-card__footer">
+        <div className="post-card__meta">
+          <span>👁 {post.view_count}</span>
+          <span>💬 {post.comment_count}</span>
+        </div>
+        {(isOwner || isMod) && (
+          <div className="post-card__actions">
+            {isOwner && (
+              <Link to={`/gonderiler/${post.id}/duzenle`} className="btn btn--ghost btn--sm">Düzenle</Link>
+            )}
+            <button className="btn btn--danger btn--sm" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Siliniyor…' : 'Sil'}
+            </button>
+          </div>
+        )}
+      </footer>
+    </article>
+  );
+}
+
+export function CreatePostForm({ onCreated }) {
+  const [fields,  setFields]  = useState({ title: '', content: '', media_url: '' });
+  const [errors,  setErrors]  = useState({});
+  const [loading, setLoading] = useState(false);
+  const [general, setGeneral] = useState('');
+
+  function change(e) {
+    const { name, value } = e.target;
+    setFields(f => ({ ...f, [name]: value }));
+    setErrors(e => ({ ...e, [name]: undefined }));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setGeneral('');
+    setLoading(true);
+    try {
+      const res = await postsApi.create(fields);
+      setFields({ title: '', content: '', media_url: '' });
+      onCreated?.(res.data.post);
+    } catch (err) {
+      if (err instanceof ApiError && err.errors.length) {
+        const mapped = {};
+        err.errors.forEach(({ field, message }) => { mapped[field] = message; });
+        setErrors(mapped);
+      } else {
+        setGeneral(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form className="post-form" onSubmit={submit} noValidate>
+      <h2 className="post-form__title">Gönderi Paylaş</h2>
+      {general && <p className="post-form__error" role="alert">{general}</p>}
+      <div className={`form-group${errors.title ? ' form-group--error' : ''}`}>
+        <label htmlFor="title" className="form-group__label">Başlık *</label>
+        <input id="title" name="title" type="text" className="form-group__input" value={fields.title} onChange={change} placeholder="{{gonderi_basligi}}" />
+        {errors.title && <span className="form-group__error">{errors.title}</span>}
+      </div>
+      <div className={`form-group${errors.content ? ' form-group--error' : ''}`}>
+        <label htmlFor="content" className="form-group__label">İçerik *</label>
+        <textarea id="content" name="content" className="form-group__textarea" rows={5} value={fields.content} onChange={change} placeholder="{{gonderi_icerigi}}" />
+        {errors.content && <span className="form-group__error">{errors.content}</span>}
+      </div>
+      <div className={`form-group${errors.media_url ? ' form-group--error' : ''}`}>
+        <label htmlFor="media_url" className="form-group__label">Medya URL (isteğe bağlı)</label>
+        <input id="media_url" name="media_url" type="url" className="form-group__input" value={fields.media_url} onChange={change} placeholder="{{medya_url}}" />
+        {errors.media_url && <span className="form-group__error">{errors.media_url}</span>}
+      </div>
+      <button type="submit" className="btn btn--primary" disabled={loading}>
+        {loading ? 'Paylaşılıyor…' : 'Paylaş'}
+      </button>
+    </form>
+  );
+}
