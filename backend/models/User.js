@@ -11,50 +11,58 @@ function sanitize(user) {
   return safe;
 }
 
-function findById(id) {
-  return getDb().prepare('SELECT * FROM users WHERE id = ?').get(id);
+async function findById(id) {
+  const pool = getDb();
+  const res = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  return res.rows[0] || null;
 }
 
-function findByEmail(email) {
-  return getDb().prepare('SELECT * FROM users WHERE email = ?').get(email);
+async function findByEmail(email) {
+  const pool = getDb();
+  const res = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+  return res.rows[0] || null;
 }
 
-function findByUsername(username) {
-  return getDb().prepare('SELECT * FROM users WHERE username = ?').get(username);
+async function findByUsername(username) {
+  const pool = getDb();
+  const res = await pool.query('SELECT * FROM users WHERE LOWER(username) = LOWER($1)', [username]);
+  return res.rows[0] || null;
 }
 
 async function create({ username, email, password, display_name }) {
-  const db   = getDb();
+  const pool = getDb();
   const hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  const result = db.prepare(`
-    INSERT INTO users (username, email, password, display_name)
-    VALUES (?, ?, ?, ?)
-  `).run(username, email, hash, display_name || null);
+  const res = await pool.query(
+    'INSERT INTO users (username, email, password, display_name) VALUES ($1, $2, $3, $4) RETURNING *',
+    [username, email, hash, display_name || null]
+  );
 
-  return findById(result.lastInsertRowid);
+  return res.rows[0];
 }
 
 async function verifyPassword(plaintext, hash) {
   return bcrypt.compare(plaintext, hash);
 }
 
-function updateProfile(id, fields) {
+async function updateProfile(id, fields) {
   const allowed = ['display_name', 'bio', 'avatar_url'];
-  const updates = Object.entries(fields)
-    .filter(([k]) => allowed.includes(k))
-    .map(([k]) => `${k} = ?`);
+  const updates = [];
+  const values  = [];
+  let i = 1;
+
+  for (const [k, v] of Object.entries(fields)) {
+    if (allowed.includes(k)) {
+      updates.push(`${k} = $${i++}`);
+      values.push(v);
+    }
+  }
 
   if (!updates.length) return findById(id);
 
-  const values = Object.entries(fields)
-    .filter(([k]) => allowed.includes(k))
-    .map(([, v]) => v);
-
-  getDb()
-    .prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)
-    .run(...values, id);
-
+  values.push(id);
+  const pool = getDb();
+  await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${i}`, values);
   return findById(id);
 }
 

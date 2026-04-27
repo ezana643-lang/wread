@@ -1,30 +1,64 @@
 'use strict';
 
-const path = require('path');
-const fs   = require('fs');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('dotenv').config();
+const { getDb } = require('../config/db');
 
-const Database = require('better-sqlite3');
+async function init() {
+  const pool = getDb();
 
-const DB_PATH = process.env.DB_PATH || './database/wread.db';
-const SCHEMA   = path.join(__dirname, 'schema.sql');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id          SERIAL PRIMARY KEY,
+      username    TEXT    NOT NULL UNIQUE,
+      email       TEXT    NOT NULL UNIQUE,
+      password    TEXT    NOT NULL,
+      display_name TEXT,
+      bio          TEXT,
+      avatar_url   TEXT,
+      is_active   INTEGER NOT NULL DEFAULT 1,
+      role        TEXT    NOT NULL DEFAULT 'member',
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
-function init() {
-  const dbDir = path.dirname(path.resolve(DB_PATH));
-  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+    CREATE TABLE IF NOT EXISTS posts (
+      id          SERIAL PRIMARY KEY,
+      title       TEXT    NOT NULL,
+      content     TEXT    NOT NULL,
+      media_url   TEXT,
+      author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      is_published INTEGER NOT NULL DEFAULT 1,
+      view_count   INTEGER NOT NULL DEFAULT 0,
+      like_count   INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
-  const db = new Database(path.resolve(DB_PATH));
+    CREATE TABLE IF NOT EXISTS comments (
+      id          SERIAL PRIMARY KEY,
+      content     TEXT    NOT NULL,
+      post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      parent_id   INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+      is_hidden   INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
-  const sql = fs.readFileSync(SCHEMA, 'utf8');
-  db.exec(sql);
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash  TEXT    NOT NULL UNIQUE,
+      expires_at  TIMESTAMPTZ NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
-  console.log(`✔  Veritabanı başarıyla oluşturuldu → ${path.resolve(DB_PATH)}`);
-  db.close();
+  console.log('✔  Veritabanı başarıyla oluşturuldu.');
+  await pool.end();
 }
 
-try {
-  init();
-} catch (err) {
-  console.error('✖  Veritabanı başlatma hatası:', err.message);
+init().catch(err => {
+  console.error('✖  Hata:', err.message);
   process.exit(1);
-}
+});

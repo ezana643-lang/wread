@@ -1,28 +1,18 @@
 'use strict';
 
-const path     = require('path');
-const fs       = require('fs');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 
-let _db = null;
+let _pool = null;
 
 function getDb() {
-  if (_db) return _db;
+  if (_pool) return _pool;
 
-  const dbPath = path.resolve(process.env.DB_PATH || './database/wread.db');
-  const dbDir  = path.dirname(dbPath);
+  _pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
 
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-
-  _db = new Database(dbPath);
-
-  _db.pragma('journal_mode = WAL');
-  _db.pragma('foreign_keys = ON');
-  _db.pragma('synchronous = NORMAL');
-
-  return _db;
+  return _pool;
 }
 
 module.exports = { getDb };

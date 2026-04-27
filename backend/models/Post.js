@@ -11,72 +11,85 @@ const POST_WITH_AUTHOR = `
     u.username      AS author_username,
     u.display_name  AS author_display_name,
     u.avatar_url    AS author_avatar_url,
-    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.is_hidden = 0)
+    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.is_hidden = 0)::int
       AS comment_count
   FROM posts p
   JOIN users u ON u.id = p.author_id
 `;
 
-function findById(id) {
-  return getDb()
-    .prepare(`${POST_WITH_AUTHOR} WHERE p.id = ? AND p.is_published = 1`)
-    .get(id);
+async function findById(id) {
+  const pool = getDb();
+  const res = await pool.query(
+    `${POST_WITH_AUTHOR} WHERE p.id = $1 AND p.is_published = 1`,
+    [id]
+  );
+  return res.rows[0] || null;
 }
 
-function list({ limit = DEFAULT_LIMIT, offset = 0, authorId } = {}) {
-  const db  = getDb();
+async function list({ limit = DEFAULT_LIMIT, offset = 0, authorId } = {}) {
+  const pool = getDb();
   const cap = Math.min(Number(limit), MAX_LIMIT);
   const off = Math.max(Number(offset), 0);
 
   if (authorId) {
-    return db
-      .prepare(`${POST_WITH_AUTHOR} WHERE p.author_id = ? AND p.is_published = 1 ORDER BY p.created_at DESC LIMIT ? OFFSET ?`)
-      .all(authorId, cap, off);
+    const res = await pool.query(
+      `${POST_WITH_AUTHOR} WHERE p.author_id = $1 AND p.is_published = 1 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
+      [authorId, cap, off]
+    );
+    return res.rows;
   }
 
-  return db
-    .prepare(`${POST_WITH_AUTHOR} WHERE p.is_published = 1 ORDER BY p.created_at DESC LIMIT ? OFFSET ?`)
-    .all(cap, off);
+  const res = await pool.query(
+    `${POST_WITH_AUTHOR} WHERE p.is_published = 1 ORDER BY p.created_at DESC LIMIT $1 OFFSET $2`,
+    [cap, off]
+  );
+  return res.rows;
 }
 
-function count({ authorId } = {}) {
-  const db = getDb();
+async function count({ authorId } = {}) {
+  const pool = getDb();
   if (authorId) {
-    return db.prepare('SELECT COUNT(*) AS n FROM posts WHERE author_id = ? AND is_published = 1').get(authorId).n;
+    const res = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM posts WHERE author_id = $1 AND is_published = 1',
+      [authorId]
+    );
+    return res.rows[0].n;
   }
-  return db.prepare('SELECT COUNT(*) AS n FROM posts WHERE is_published = 1').get().n;
+  const res = await pool.query('SELECT COUNT(*)::int AS n FROM posts WHERE is_published = 1');
+  return res.rows[0].n;
 }
 
-function create({ title, content, media_url, author_id }) {
-  const db     = getDb();
-  const result = db.prepare(
-    'INSERT INTO posts (title, content, media_url, author_id) VALUES (?, ?, ?, ?)'
-  ).run(title, content, media_url || null, author_id);
-
-  return findById(result.lastInsertRowid);
+async function create({ title, content, media_url, author_id }) {
+  const pool = getDb();
+  const res = await pool.query(
+    'INSERT INTO posts (title, content, media_url, author_id) VALUES ($1, $2, $3, $4) RETURNING id',
+    [title, content, media_url || null, author_id]
+  );
+  return findById(res.rows[0].id);
 }
 
-function update(id, authorId, { title, content, media_url }) {
-  const db = getDb();
-  db.prepare(`
-    UPDATE posts
-    SET title = COALESCE(?, title),
-        content = COALESCE(?, content),
-        media_url = COALESCE(?, media_url)
-    WHERE id = ? AND author_id = ?
-  `).run(title || null, content || null, media_url || null, id, authorId);
-
+async function update(id, authorId, { title, content, media_url }) {
+  const pool = getDb();
+  await pool.query(
+    `UPDATE posts SET
+      title     = COALESCE($1, title),
+      content   = COALESCE($2, content),
+      media_url = COALESCE($3, media_url),
+      updated_at = NOW()
+    WHERE id = $4 AND author_id = $5`,
+    [title || null, content || null, media_url || null, id, authorId]
+  );
   return findById(id);
 }
 
-function remove(id, authorId) {
-  return getDb()
-    .prepare('DELETE FROM posts WHERE id = ? AND author_id = ?')
-    .run(id, authorId);
+async function remove(id, authorId) {
+  const pool = getDb();
+  return pool.query('DELETE FROM posts WHERE id = $1 AND author_id = $2', [id, authorId]);
 }
 
-function incrementView(id) {
-  getDb().prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').run(id);
+async function incrementView(id) {
+  const pool = getDb();
+  await pool.query('UPDATE posts SET view_count = view_count + 1 WHERE id = $1', [id]);
 }
 
 module.exports = { findById, list, count, create, update, remove, incrementView };

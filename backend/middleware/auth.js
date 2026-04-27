@@ -3,7 +3,7 @@
 const jwt    = require('jsonwebtoken');
 const { getDb } = require('../config/db');
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -16,11 +16,12 @@ function requireAuth(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-
-    const db   = getDb();
-    const user = db.prepare(
-      'SELECT id, username, email, role, is_active FROM users WHERE id = ?'
-    ).get(payload.sub);
+    const pool    = getDb();
+    const result  = await pool.query(
+      'SELECT id, username, email, role, is_active FROM users WHERE id = $1',
+      [payload.sub]
+    );
+    const user = result.rows[0];
 
     if (!user || !user.is_active) {
       return res.status(401).json({
@@ -41,7 +42,7 @@ function requireAuth(req, res, next) {
   }
 }
 
-function optionalAuth(req, res, next) {
+async function optionalAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -49,11 +50,12 @@ function optionalAuth(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const db      = getDb();
-    const user    = db.prepare(
-      'SELECT id, username, email, role, is_active FROM users WHERE id = ?'
-    ).get(payload.sub);
-
+    const pool    = getDb();
+    const result  = await pool.query(
+      'SELECT id, username, email, role, is_active FROM users WHERE id = $1',
+      [payload.sub]
+    );
+    const user = result.rows[0];
     if (user && user.is_active) req.user = user;
   } catch (_) {}
 
@@ -63,19 +65,11 @@ function optionalAuth(req, res, next) {
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Kimlik doğrulama gerekli.',
-      });
+      return res.status(401).json({ success: false, message: 'Kimlik doğrulama gerekli.' });
     }
-
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bu işlem için yetkiniz yok.',
-      });
+      return res.status(403).json({ success: false, message: 'Bu işlem için yetkiniz yok.' });
     }
-
     next();
   };
 }
