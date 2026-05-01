@@ -85,4 +85,43 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
   }
 });
 
+router.post('/:id/like', requireAuth, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id, 10);
+    const pool = require('../config/db').getDb();
+
+    // Kullanıcı daha önce beğenmiş mi kontrol et
+    const check = await pool.query(
+      'SELECT id FROM post_likes WHERE post_id = $1 AND user_id = $2',
+      [postId, req.user.id]
+    );
+
+    if (check.rows.length > 0) {
+      // Beğeniyi geri al
+      await pool.query(
+        'DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2',
+        [postId, req.user.id]
+      );
+      await pool.query(
+        'UPDATE posts SET like_count = like_count - 1 WHERE id = $1',
+        [postId]
+      );
+      return res.json({ success: true, liked: false });
+    } else {
+      // Beğen
+      await pool.query(
+        'INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)',
+        [postId, req.user.id]
+      );
+      await pool.query(
+        'UPDATE posts SET like_count = like_count + 1 WHERE id = $1',
+        [postId]
+      );
+      return res.json({ success: true, liked: true });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

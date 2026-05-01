@@ -1,11 +1,14 @@
 'use strict';
 
 require('dotenv').config();
-const { getDb } = require('../config/db');
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
 
 async function init() {
-  const pool = getDb();
-
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id          SERIAL PRIMARY KEY,
@@ -51,6 +54,13 @@ async function init() {
       token_hash  TEXT    NOT NULL UNIQUE,
       expires_at  TIMESTAMPTZ NOT NULL,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS post_likes (
+      id        SERIAL PRIMARY KEY,
+      post_id   INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(post_id, user_id)
     );
   `);
 

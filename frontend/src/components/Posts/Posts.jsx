@@ -67,9 +67,23 @@ export function PostFeed() {
 
 export function PostCard({ post, onDelete }) {
   const { user } = useAuth();
-  const [deleting, setDeleting] = useState(false);
+  const [deleting,  setDeleting]  = useState(false);
+  const [liked,     setLiked]     = useState(false);
+  const [likeCount, setLikeCount] = useState(post.like_count || 0);
+
   const isOwner = user && user.id === post.author_id;
   const isMod   = user && ['moderator', 'admin'].includes(user.role);
+
+  async function handleLike() {
+    if (!user) return;
+    try {
+      const res = await postsApi.like(post.id);
+      setLiked(res.liked);
+      setLikeCount(c => res.liked ? c + 1 : c - 1);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 
   async function handleDelete() {
     if (!window.confirm('Bu gönderiyi silmek istediğinizden emin misiniz?')) return;
@@ -107,6 +121,14 @@ export function PostCard({ post, onDelete }) {
         <div className="post-card__meta">
           <span>👁 {post.view_count}</span>
           <span>💬 {post.comment_count}</span>
+          <button
+            onClick={handleLike}
+            className={`btn btn--xs ${liked ? 'btn--primary' : 'btn--ghost'}`}
+            disabled={!user}
+            title={user ? 'Beğen' : 'Beğenmek için giriş yapın'}
+          >
+            ❤️ {likeCount}
+          </button>
         </div>
         {(isOwner || isMod) && (
           <div className="post-card__actions">

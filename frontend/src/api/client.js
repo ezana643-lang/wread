@@ -53,6 +53,7 @@ export const postsApi = {
   create: (payload) => request('/posts',       { method: 'POST',   body: payload }),
   update: (id, pl)  => request(`/posts/${id}`, { method: 'PUT',    body: pl }),
   remove: (id)      => request(`/posts/${id}`, { method: 'DELETE' }),
+  like:   (id)      => request(`/posts/${id}/like`, { method: 'POST' }),
 };
 
 export const commentsApi = {
