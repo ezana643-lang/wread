@@ -1,5 +1,6 @@
 'use strict';
 
+const { upload, uploadToCloudinary } = require('../upload');
 const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
 
@@ -36,10 +37,23 @@ router.get('/', optionalAuth, async (req, res, next) => {
   }
 });
 
-router.post('/', requireAuth, postRules, validate, async (req, res, next) => {
+router.post('/', requireAuth, upload.single('image'), async (req, res, next) => {
   try {
-    const { title, content, media_url } = req.body;
-    const post = await Post.create({ title, content, media_url: media_url || null, author_id: req.user.id });
+    const { title, content } = req.body;
+    let media_url = req.body.media_url || null;
+
+    if (req.file) {
+      media_url = await uploadToCloudinary(req.file.buffer);
+    }
+
+    if (!title || title.trim().length < 3) {
+      return res.status(422).json({ success: false, message: 'Başlık 3–200 karakter olmalıdır.' });
+    }
+    if (!content || content.trim().length < 10) {
+      return res.status(422).json({ success: false, message: 'İçerik en az 10 karakter olmalıdır.' });
+    }
+
+    const post = await Post.create({ title, content, media_url, author_id: req.user.id });
     return res.status(201).json({ success: true, message: 'Gönderi başarıyla paylaşıldı.', data: { post } });
   } catch (err) {
     next(err);

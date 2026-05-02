@@ -179,7 +179,9 @@ export function PostCard({ post, onDelete }) {
 }
 
 export function CreatePostForm({ onCreated }) {
-  const [fields,  setFields]  = useState({ title: '', content: '', media_url: '' });
+  const [fields,  setFields]  = useState({ title: '', content: '' });
+  const [image,   setImage]   = useState(null);
+  const [preview, setPreview] = useState(null);
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
   const [general, setGeneral] = useState('');
@@ -190,22 +192,37 @@ export function CreatePostForm({ onCreated }) {
     setErrors(e => ({ ...e, [name]: undefined }));
   }
 
+  function handleImage(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImage(file);
+    setPreview(URL.createObjectURL(file));
+  }
+
   async function submit(e) {
     e.preventDefault();
     setGeneral('');
     setLoading(true);
     try {
-      const res = await postsApi.create(fields);
-      setFields({ title: '', content: '', media_url: '' });
-      onCreated?.(res.data.post);
+      const formData = new FormData();
+      formData.append('title', fields.title);
+      formData.append('content', fields.content);
+      if (image) formData.append('image', image);
+
+      const token = localStorage.getItem('wread_token');
+      const res = await fetch('https://wread-csw7.onrender.com/api/posts', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Hata oluştu.');
+      setFields({ title: '', content: '' });
+      setImage(null);
+      setPreview(null);
+      onCreated?.(data.data.post);
     } catch (err) {
-      if (err instanceof ApiError && err.errors.length) {
-        const mapped = {};
-        err.errors.forEach(({ field, message }) => { mapped[field] = message; });
-        setErrors(mapped);
-      } else {
-        setGeneral(err.message);
-      }
+      setGeneral(err.message);
     } finally {
       setLoading(false);
     }
@@ -225,10 +242,10 @@ export function CreatePostForm({ onCreated }) {
         <textarea id="content" name="content" className="form-group__textarea" rows={5} value={fields.content} onChange={change} placeholder="{{gonderi_icerigi}}" />
         {errors.content && <span className="form-group__error">{errors.content}</span>}
       </div>
-      <div className={`form-group${errors.media_url ? ' form-group--error' : ''}`}>
-        <label htmlFor="media_url" className="form-group__label">Medya URL (isteğe bağlı)</label>
-        <input id="media_url" name="media_url" type="url" className="form-group__input" value={fields.media_url} onChange={change} placeholder="{{medya_url}}" />
-        {errors.media_url && <span className="form-group__error">{errors.media_url}</span>}
+      <div className="form-group">
+        <label htmlFor="image" className="form-group__label">Görsel (isteğe bağlı)</label>
+        <input id="image" type="file" accept="image/*" onChange={handleImage} className="form-group__input" />
+        {preview && <img src={preview} alt="Önizleme" style={{ marginTop: 8, borderRadius: 8, maxHeight: 200, objectFit: 'cover' }} />}
       </div>
       <button type="submit" className="btn btn--primary" disabled={loading}>
         {loading ? 'Paylaşılıyor…' : 'Paylaş'}
