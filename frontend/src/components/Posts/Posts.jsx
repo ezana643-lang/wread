@@ -1,21 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { postsApi, ApiError } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
 export function PostFeed() {
-  const [posts,   setPosts]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
-  const [page,    setPage]    = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [posts,       setPosts]       = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState('');
+  const [page,        setPage]        = useState(0);
+  const [hasMore,     setHasMore]     = useState(false);
+  const [search,      setSearch]      = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const LIMIT = 20;
 
-  const load = useCallback(async (offset = 0, replace = true) => {
+  const load = useCallback(async (offset = 0, replace = true, searchTerm = '') => {
     setLoading(true);
     setError('');
     try {
-      const res = await postsApi.list({ limit: LIMIT, offset });
+      const params = { limit: LIMIT, offset };
+      if (searchTerm) params.search = searchTerm;
+      const res = await postsApi.list(params);
       setPosts(prev => replace ? res.data.posts : [...prev, ...res.data.posts]);
       setHasMore(res.data.pagination.hasMore);
       setPage(offset);
@@ -26,7 +30,18 @@ export function PostFeed() {
     }
   }, []);
 
-  useEffect(() => { load(0); }, [load]);
+  useState(() => { load(0); }, [load]);
+
+  function handleSearch() {
+    setSearch(searchInput);
+    load(0, true, searchInput);
+  }
+
+  function handleClear() {
+    setSearch('');
+    setSearchInput('');
+    load(0, true, '');
+  }
 
   if (loading && posts.length === 0) return <p className="state-message">Gönderiler yükleniyor…</p>;
 
@@ -37,26 +52,44 @@ export function PostFeed() {
     </div>
   );
 
-  if (!loading && posts.length === 0) return (
-    <div className="empty-state">
-      <p className="empty-state__icon">📭</p>
-      <p className="empty-state__message">Henüz hiç gönderi yok.</p>
-      <p className="empty-state__hint">İlk gönderiyi paylaşan siz olun.</p>
-    </div>
-  );
-
   return (
     <section aria-label="Gönderi akışı">
+      <div className="search-bar">
+        <input
+          type="text"
+          className="form-group__input"
+          placeholder="Gönderi ara…"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+        />
+        <button className="btn btn--primary" onClick={handleSearch}>Ara</button>
+        {search && (
+          <button className="btn btn--ghost" onClick={handleClear}>Temizle</button>
+        )}
+      </div>
+
+      {!loading && posts.length === 0 && (
+        <div className="empty-state">
+          <p className="empty-state__icon">📭</p>
+          <p className="empty-state__message">
+            {search ? `"${search}" için sonuç bulunamadı.` : 'Henüz hiç gönderi yok.'}
+          </p>
+          {!search && <p className="empty-state__hint">İlk gönderiyi paylaşan siz olun.</p>}
+        </div>
+      )}
+
       <ul className="post-feed" role="list">
         {posts.map(post => (
           <li key={post.id}>
-            <PostCard post={post} onDelete={() => load(0)} />
+            <PostCard post={post} onDelete={() => load(0, true, search)} />
           </li>
         ))}
       </ul>
+
       {hasMore && (
         <div className="feed-more">
-          <button className="btn btn--secondary" onClick={() => load(page + LIMIT, false)} disabled={loading}>
+          <button className="btn btn--secondary" onClick={() => load(page + LIMIT, false, search)} disabled={loading}>
             {loading ? 'Yükleniyor…' : 'Daha Fazla Göster'}
           </button>
         </div>

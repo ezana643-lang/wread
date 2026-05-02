@@ -25,9 +25,10 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const limit    = parseInt(req.query.limit, 10)  || 20;
     const offset   = parseInt(req.query.offset, 10) || 0;
     const authorId = req.query.author_id ? parseInt(req.query.author_id, 10) : undefined;
+    const search   = req.query.search || '';
 
-    const posts = await Post.list({ limit, offset, authorId });
-    const total = await Post.count({ authorId });
+    const posts = await Post.list({ limit, offset, authorId, search });
+    const total = await Post.count({ authorId, search });
 
     return res.json({ success: true, data: { posts, pagination: { total, limit, offset, hasMore: offset + limit < total } } });
   } catch (err) {
@@ -90,33 +91,18 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
     const postId = parseInt(req.params.id, 10);
     const pool = require('../config/db').getDb();
 
-    // Kullanıcı daha önce beğenmiş mi kontrol et
     const check = await pool.query(
       'SELECT id FROM post_likes WHERE post_id = $1 AND user_id = $2',
       [postId, req.user.id]
     );
 
     if (check.rows.length > 0) {
-      // Beğeniyi geri al
-      await pool.query(
-        'DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2',
-        [postId, req.user.id]
-      );
-      await pool.query(
-        'UPDATE posts SET like_count = like_count - 1 WHERE id = $1',
-        [postId]
-      );
+      await pool.query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [postId, req.user.id]);
+      await pool.query('UPDATE posts SET like_count = like_count - 1 WHERE id = $1', [postId]);
       return res.json({ success: true, liked: false });
     } else {
-      // Beğen
-      await pool.query(
-        'INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)',
-        [postId, req.user.id]
-      );
-      await pool.query(
-        'UPDATE posts SET like_count = like_count + 1 WHERE id = $1',
-        [postId]
-      );
+      await pool.query('INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)', [postId, req.user.id]);
+      await pool.query('UPDATE posts SET like_count = like_count + 1 WHERE id = $1', [postId]);
       return res.json({ success: true, liked: true });
     }
   } catch (err) {

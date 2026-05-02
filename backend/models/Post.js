@@ -26,10 +26,18 @@ async function findById(id) {
   return res.rows[0] || null;
 }
 
-async function list({ limit = DEFAULT_LIMIT, offset = 0, authorId } = {}) {
+async function list({ limit = DEFAULT_LIMIT, offset = 0, authorId, search } = {}) {
   const pool = getDb();
   const cap = Math.min(Number(limit), MAX_LIMIT);
   const off = Math.max(Number(offset), 0);
+
+  if (search) {
+    const res = await pool.query(
+      `${POST_WITH_AUTHOR} WHERE p.is_published = 1 AND (p.title ILIKE $1 OR p.content ILIKE $1) ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
+      [`%${search}%`, cap, off]
+    );
+    return res.rows;
+  }
 
   if (authorId) {
     const res = await pool.query(
@@ -46,8 +54,15 @@ async function list({ limit = DEFAULT_LIMIT, offset = 0, authorId } = {}) {
   return res.rows;
 }
 
-async function count({ authorId } = {}) {
+async function count({ authorId, search } = {}) {
   const pool = getDb();
+  if (search) {
+    const res = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM posts WHERE is_published = 1 AND (title ILIKE $1 OR content ILIKE $1)',
+      [`%${search}%`]
+    );
+    return res.rows[0].n;
+  }
   if (authorId) {
     const res = await pool.query(
       'SELECT COUNT(*)::int AS n FROM posts WHERE author_id = $1 AND is_published = 1',
