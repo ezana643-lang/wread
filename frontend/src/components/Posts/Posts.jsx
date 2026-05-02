@@ -149,6 +149,7 @@ export function PostCard({ post, onDelete }) {
       <Link to={`/gonderiler/${post.id}`} className="post-card__link">
         <h2 className="post-card__title">{post.title}</h2>
         <p className="post-card__excerpt">{post.content.length > 200 ? post.content.slice(0, 200) + '…' : post.content}</p>
+        {post.media_url && <img src={post.media_url} alt={post.title} style={{ marginTop: 12, borderRadius: 8, width: '100%', maxHeight: 400, objectFit: 'cover' }} />}
       </Link>
       <footer className="post-card__footer">
         <div className="post-card__meta">
