@@ -7,16 +7,10 @@ import { CommentSection } from '../components/Comments/CommentSection';
 import { LoginForm, RegisterForm } from '../components/Auth/AuthForms';
 
 export function HomePage() {
-  const { user } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <main className="page page--home">
-      {user && (
-        <aside className="page__sidebar">
-          <CreatePostForm onCreated={() => setRefreshKey(k => k + 1)} />
-        </aside>
-      )}
       <section className="page__main">
         <h1 className="page__heading">Son Gönderiler</h1>
         <PostFeed key={refreshKey} />
@@ -128,6 +122,17 @@ export function NotFoundPage() {
         <p className="empty-state__message">Sayfa bulunamadı.</p>
         <button className="btn btn--primary" onClick={() => navigate('/')}>Ana Sayfaya Dön</button>
       </div>
+    </main>
+  );
+}
+
+export function CreatePostPage() {
+  const navigate = useNavigate();
+  const { CreatePostForm } = require('../components/Posts/Posts');
+
+  return (
+    <main className="page page--create">
+      <CreatePostForm onCreated={() => navigate('/')} />
     </main>
   );
 }

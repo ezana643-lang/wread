@@ -1,66 +1,64 @@
-import { BrowserRouter, Routes, Route, Link, NavLink, Navigate } from 'react-router-dom';
+import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { HomePage, PostDetailPage, AuthPage, NotFoundPage } from './pages/Pages';
+import * as Pages from './pages/Pages';
+import './index.css';
 
-export default function App() {
+function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Navbar />
-        <Routes>
-          <Route path="/"                       element={<HomePage />} />
-          <Route path="/giris"                  element={<AuthPage />} />
-          <Route path="/gonderiler/:id"         element={<PostDetailPage />} />
-          <Route path="/gonderiler/:id/duzenle" element={<ProtectedEditPage />} />
-          <Route path="*"                       element={<NotFoundPage />} />
-        </Routes>
+        <Layout />
       </BrowserRouter>
     </AuthProvider>
   );
 }
 
-function Navbar() {
-  const { user, logout, loading } = useAuth();
+function Layout() {
+  const { user, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <nav className="navbar" aria-label="Ana navigasyon">
-      <div className="navbar__inner">
-        <Link to="/" className="navbar__brand">
-          <span className="navbar__brand-logo">W</span>
-          <span className="navbar__brand-name">Read</span>
-        </Link>
-
-        <div className="navbar__links">
-          <NavLink to="/" className={({ isActive }) => `navbar__link${isActive ? ' navbar__link--active' : ''}`} end>
-            Ana Sayfa
-          </NavLink>
+    <div className="app">
+      <header className="header">
+        <div className="header__brand">
+          <Link to="/" className="brand">
+            <span className="brand__logo">W</span>
+            <span className="brand__name">Read</span>
+          </Link>
         </div>
-
-        <div className="navbar__auth">
-          {loading ? null : user ? (
+        <nav className="header__nav">
+          {user ? (
             <>
-              <span className="navbar__username">@{user.username}</span>
-              <button className="btn btn--ghost btn--sm" onClick={logout}>Çıkış Yap</button>
+              <span className="header__user">@{user.username}</span>
+              <div className="menu-wrapper">
+                <button className="btn btn--ghost" onClick={() => setMenuOpen(!menuOpen)}>⋯</button>
+                {menuOpen && (
+                  <div className="dropdown-menu">
+                    <Link to="/gonderi-olustur" className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>Gönderi At</Link>
+                    <button className="dropdown-menu__item" onClick={() => { logout(); setMenuOpen(false); }}>Çıkış Yap</button>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <>
-              <Link to="/giris" className="btn btn--ghost btn--sm">Giriş Yap</Link>
-              <Link to="/giris" className="btn btn--primary btn--sm">Kayıt Ol</Link>
+              <Link to="/giris" className="btn btn--ghost">Giriş Yap</Link>
+              <Link to="/kayit" className="btn btn--primary">Kayıt Ol</Link>
             </>
           )}
-        </div>
-      </div>
-    </nav>
+        </nav>
+      </header>
+      <Routes>
+        <Route path="/" element={<Pages.HomePage />} />
+        <Route path="/gonderiler/:id" element={<Pages.PostDetailPage />} />
+        <Route path="/gonderi-olustur" element={<Pages.CreatePostPage />} />
+        <Route path="/giris" element={<Pages.AuthPage />} />
+        <Route path="/kayit" element={<Pages.AuthPage />} />
+        <Route path="*" element={<Pages.NotFoundPage />} />
+      </Routes>
+    </div>
   );
 }
 
-function ProtectedEditPage() {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  if (!user) return <Navigate to="/giris" replace />;
-  return (
-    <main className="page page--center">
-      <p className="state-message">Düzenleme formu yükleniyor…</p>
-    </main>
-  );
-}
+export default App;
