@@ -7,14 +7,29 @@ import { CommentSection } from '../components/Comments/CommentSection';
 import { LoginForm, RegisterForm } from '../components/Auth/AuthForms';
 
 export function HomePage() {
-  const [refreshKey, setRefreshKey] = useState(0);
-
   return (
     <main className="page page--home">
       <section className="page__main">
         <h1 className="page__heading">Son Gönderiler</h1>
-        <PostFeed key={refreshKey} />
+        <PostFeed />
       </section>
+    </main>
+  );
+}
+
+export function CreatePostPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) navigate('/giris', { replace: true });
+  }, [user, navigate]);
+
+  return (
+    <main className="page page--create">
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '2rem' }}>
+        <CreatePostForm onCreated={() => navigate('/')} />
+      </div>
     </main>
   );
 }
@@ -34,7 +49,6 @@ export function PostDetailPage() {
   }, [id]);
 
   if (loading) return <p className="state-message">Gönderi yükleniyor…</p>;
-
   if (error) return (
     <main className="page page--center">
       <div className="state-error" role="alert">
@@ -43,7 +57,6 @@ export function PostDetailPage() {
       </div>
     </main>
   );
-
   if (!post) return (
     <main className="page page--center">
       <div className="empty-state">
@@ -73,11 +86,7 @@ export function PostDetailPage() {
         </header>
         <h1 className="post-detail__title">{post.title}</h1>
         <div className="post-detail__content">{post.content}</div>
-        {post.media_url && (
-          <a href={post.media_url} className="post-detail__media-link" target="_blank" rel="noopener noreferrer">
-            Bağlantıyı Görüntüle ↗
-          </a>
-        )}
+        {post.media_url && <img src={post.media_url} alt={post.title} style={{ marginTop: 16, borderRadius: 8, width: '100%', maxHeight: 500, objectFit: 'cover' }} />}
         <footer className="post-detail__meta">
           <span>👁 {post.view_count} görüntüleme</span>
           <span>💬 {post.comment_count} yorum</span>
@@ -122,17 +131,6 @@ export function NotFoundPage() {
         <p className="empty-state__message">Sayfa bulunamadı.</p>
         <button className="btn btn--primary" onClick={() => navigate('/')}>Ana Sayfaya Dön</button>
       </div>
-    </main>
-  );
-}
-
-export function CreatePostPage() {
-  const navigate = useNavigate();
-  const { CreatePostForm } = require('../components/Posts/Posts');
-
-  return (
-    <main className="page page--create">
-      <CreatePostForm onCreated={() => navigate('/')} />
     </main>
   );
 }
