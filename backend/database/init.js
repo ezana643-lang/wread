@@ -3,72 +3,94 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL tanimli degil.');
+  process.exit(1);
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 async function init() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id          SERIAL PRIMARY KEY,
-      username    TEXT    NOT NULL UNIQUE,
-      email       TEXT    NOT NULL UNIQUE,
-      password    TEXT    NOT NULL,
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
       display_name TEXT,
-      bio          TEXT,
-      avatar_url   TEXT,
-      is_active   INTEGER NOT NULL DEFAULT 1,
-      role        TEXT    NOT NULL DEFAULT 'member',
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      bio TEXT,
+      avatar_url TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      role TEXT NOT NULL DEFAULT 'member',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
     CREATE TABLE IF NOT EXISTS posts (
-      id          SERIAL PRIMARY KEY,
-      title       TEXT    NOT NULL,
-      content     TEXT    NOT NULL,
-      media_url   TEXT,
-      author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      media_url TEXT,
+      author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       is_published INTEGER NOT NULL DEFAULT 1,
-      view_count   INTEGER NOT NULL DEFAULT 0,
-      like_count   INTEGER NOT NULL DEFAULT 0,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      view_count INTEGER NOT NULL DEFAULT 0,
+      like_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id);
+    CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
 
     CREATE TABLE IF NOT EXISTS comments (
-      id          SERIAL PRIMARY KEY,
-      content     TEXT    NOT NULL,
-      post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-      author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      parent_id   INTEGER REFERENCES comments(id) ON DELETE CASCADE,
-      is_hidden   INTEGER NOT NULL DEFAULT 0,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id SERIAL PRIMARY KEY,
+      content TEXT NOT NULL,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+      is_hidden INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_author_id ON comments(author_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
+
     CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id          SERIAL PRIMARY KEY,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token_hash  TEXT    NOT NULL UNIQUE,
-      expires_at  TIMESTAMPTZ NOT NULL,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
     CREATE TABLE IF NOT EXISTS post_likes (
-      id        SERIAL PRIMARY KEY,
-      post_id   INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      id SERIAL PRIMARY KEY,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(post_id, user_id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_post_likes_post_id ON post_likes(post_id);
+    CREATE INDEX IF NOT EXISTS idx_post_likes_user_id ON post_likes(user_id);
   `);
 
-  console.log('✔  Veritabanı başarıyla oluşturuldu.');
+  console.log('Veritabani basariyla hazirlandi.');
   await pool.end();
 }
 
 init().catch(err => {
-  console.error('✖  Hata:', err.message);
+  console.error('Hata:', err.message);
   process.exit(1);
 });
+

@@ -3,19 +3,64 @@
 const { getDb } = require('../config/db');
 
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT     = 100;
+const MAX_LIMIT = 50;
 
 const POST_WITH_AUTHOR = `
   SELECT
     p.*,
-    u.username      AS author_username,
-    u.display_name  AS author_display_name,
-    u.avatar_url    AS author_avatar_url,
-    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.is_hidden = 0)::int
-      AS comment_count
+    u.username AS author_username,
+    u.display_name AS author_display_name,
+    u.avatar_url AS author_avatar_url,
+    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.is_hidden = 0)::int AS comment_count
   FROM posts p
   JOIN users u ON u.id = p.author_id
 `;
+
+const MEDIA_PATTERN = 'https?://[^[:space:]]*(youtube|youtu\\.be|instagram|facebook|fb\\.watch)';
+
+function normalizeLimit(limit) {
+  const parsed = Number.parseInt(limit, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) return DEFAULT_LIMIT;
+  return Math.min(parsed, MAX_LIMIT);
+}
+
+function normalizeOffset(offset) {
+  const parsed = Number.parseInt(offset, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function orderBy(sort) {
+  switch (sort) {
+    case 'popular':
+      return 'p.like_count DESC, p.view_count DESC, p.created_at DESC';
+    case 'discussed':
+      return 'comment_count DESC, p.created_at DESC';
+    default:
+      return 'p.created_at DESC';
+  }
+}
+
+function buildFilters({ authorId, search, hasMedia } = {}) {
+  const clauses = ['p.is_published = 1'];
+  const values = [];
+
+  if (authorId) {
+    values.push(authorId);
+    clauses.push(`p.author_id = $${values.length}`);
+  }
+
+  if (search) {
+    values.push(`%${search}%`);
+    clauses.push(`(p.title ILIKE $${values.length} OR p.content ILIKE $${values.length} OR u.username ILIKE $${values.length})`);
+  }
+
+  if (hasMedia) {
+    values.push(MEDIA_PATTERN);
+    clauses.push(`(p.media_url IS NOT NULL OR p.content ~* $${values.length})`);
+  }
+
+  return { where: clauses.join(' AND '), values };
+}
 
 async function findById(id) {
   const pool = getDb();
@@ -26,51 +71,32 @@ async function findById(id) {
   return res.rows[0] || null;
 }
 
-async function list({ limit = DEFAULT_LIMIT, offset = 0, authorId, search } = {}) {
+async function list({ limit = DEFAULT_LIMIT, offset = 0, authorId, search, sort, hasMedia } = {}) {
   const pool = getDb();
-  const cap = Math.min(Number(limit), MAX_LIMIT);
-  const off = Math.max(Number(offset), 0);
+  const cap = normalizeLimit(limit);
+  const off = normalizeOffset(offset);
+  const { where, values } = buildFilters({ authorId, search, hasMedia });
 
-  if (search) {
-    const res = await pool.query(
-      `${POST_WITH_AUTHOR} WHERE p.is_published = 1 AND (p.title ILIKE $1 OR p.content ILIKE $1) ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
-      [`%${search}%`, cap, off]
-    );
-    return res.rows;
-  }
-
-  if (authorId) {
-    const res = await pool.query(
-      `${POST_WITH_AUTHOR} WHERE p.author_id = $1 AND p.is_published = 1 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
-      [authorId, cap, off]
-    );
-    return res.rows;
-  }
+  values.push(cap, off);
 
   const res = await pool.query(
-    `${POST_WITH_AUTHOR} WHERE p.is_published = 1 ORDER BY p.created_at DESC LIMIT $1 OFFSET $2`,
-    [cap, off]
+    `${POST_WITH_AUTHOR} WHERE ${where} ORDER BY ${orderBy(sort)} LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    values
   );
+
   return res.rows;
 }
 
-async function count({ authorId, search } = {}) {
+async function count({ authorId, search, hasMedia } = {}) {
   const pool = getDb();
-  if (search) {
-    const res = await pool.query(
-      'SELECT COUNT(*)::int AS n FROM posts WHERE is_published = 1 AND (title ILIKE $1 OR content ILIKE $1)',
-      [`%${search}%`]
-    );
-    return res.rows[0].n;
-  }
-  if (authorId) {
-    const res = await pool.query(
-      'SELECT COUNT(*)::int AS n FROM posts WHERE author_id = $1 AND is_published = 1',
-      [authorId]
-    );
-    return res.rows[0].n;
-  }
-  const res = await pool.query('SELECT COUNT(*)::int AS n FROM posts WHERE is_published = 1');
+  const { where, values } = buildFilters({ authorId, search, hasMedia });
+  const res = await pool.query(
+    `SELECT COUNT(*)::int AS n
+     FROM posts p
+     JOIN users u ON u.id = p.author_id
+     WHERE ${where}`,
+    values
+  );
   return res.rows[0].n;
 }
 
@@ -87,12 +113,12 @@ async function update(id, authorId, { title, content, media_url }) {
   const pool = getDb();
   await pool.query(
     `UPDATE posts SET
-      title     = COALESCE($1, title),
-      content   = COALESCE($2, content),
+      title = $1,
+      content = $2,
       media_url = COALESCE($3, media_url),
       updated_at = NOW()
     WHERE id = $4 AND author_id = $5`,
-    [title || null, content || null, media_url || null, id, authorId]
+    [title, content, media_url || null, id, authorId]
   );
   return findById(id);
 }
@@ -108,3 +134,4 @@ async function incrementView(id) {
 }
 
 module.exports = { findById, list, count, create, update, remove, incrementView };
+

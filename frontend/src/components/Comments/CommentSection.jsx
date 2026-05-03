@@ -1,22 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { commentsApi } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
 export function CommentSection({ postId }) {
   const [comments, setComments] = useState([]);
-  const [total,    setTotal]    = useState(0);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [replyTo,  setReplyTo]  = useState(null);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
   const { user } = useAuth();
 
   const loadComments = useCallback(async () => {
     setLoading(true);
     setError('');
+
     try {
       const res = await commentsApi.list(postId);
-      setComments(res.data.comments);
-      setTotal(res.data.total);
+      setComments(res.data.comments || []);
+      setTotal(res.data.total || 0);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -24,7 +26,9 @@ export function CommentSection({ postId }) {
     }
   }, [postId]);
 
-  useEffect(() => { loadComments(); }, [loadComments]);
+  useEffect(() => {
+    loadComments();
+  }, [loadComments]);
 
   return (
     <section className="comment-section" aria-label="Yorumlar">
@@ -33,25 +37,33 @@ export function CommentSection({ postId }) {
       </h3>
 
       {user ? (
-        <CommentForm postId={postId} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onPosted={() => { setReplyTo(null); loadComments(); }} />
+        <CommentForm
+          postId={postId}
+          replyTo={replyTo}
+          onCancelReply={() => setReplyTo(null)}
+          onPosted={() => {
+            setReplyTo(null);
+            loadComments();
+          }}
+        />
       ) : (
         <p className="comment-section__auth-notice">
-          Yorum yapmak için <a href="/giris" className="link">giriş yapın</a>.
+          Yorum yapmak icin <Link to="/giris" className="link">giris yapin</Link>.
         </p>
       )}
 
-      {loading && <p className="state-message">Yorumlar yükleniyor…</p>}
+      {loading && <p className="state-message">Yorumlar yukleniyor...</p>}
 
       {error && (
         <div className="state-error" role="alert">
           <p>{error}</p>
-          <button className="btn btn--secondary btn--sm" onClick={loadComments}>Tekrar Dene</button>
+          <button className="btn btn--secondary btn--sm" onClick={loadComments}>Tekrar dene</button>
         </div>
       )}
 
       {!loading && !error && comments.length === 0 && (
         <div className="empty-state empty-state--sm">
-          <p className="empty-state__message">Henüz yorum yapılmamış. İlk yorumu siz yapın!</p>
+          <p className="empty-state__message">Henuz yorum yapilmamis.</p>
         </div>
       )}
 
@@ -79,34 +91,37 @@ export function CommentSection({ postId }) {
 
 function CommentItem({ comment, postId, onDelete, onReply, isReply = false }) {
   const { user } = useAuth();
-  const [editing,  setEditing]  = useState(false);
-  const [content,  setContent]  = useState(comment.content);
-  const [saving,   setSaving]   = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState(comment.content);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isOwner = user && user.id === comment.author_id;
-  const isMod   = user && ['moderator', 'admin'].includes(user.role);
+  const isMod = user && ['moderator', 'admin'].includes(user.role);
 
   async function handleSave() {
     if (!content.trim()) return;
     setSaving(true);
+
     try {
-      await commentsApi.update(postId, comment.id, { content });
+      await commentsApi.update(postId, comment.id, { content: content.trim() });
       setEditing(false);
+      onDelete?.();
     } catch (err) {
-      alert(err.message);
+      window.alert(err.message);
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!window.confirm('Bu yorumu silmek istediğinizden emin misiniz?')) return;
+    if (!window.confirm('Bu yorumu silmek istediginizden emin misiniz?')) return;
     setDeleting(true);
+
     try {
       await commentsApi.remove(postId, comment.id);
       onDelete?.();
     } catch (err) {
-      alert(err.message);
+      window.alert(err.message);
       setDeleting(false);
     }
   }
@@ -125,10 +140,10 @@ function CommentItem({ comment, postId, onDelete, onReply, isReply = false }) {
 
       {editing ? (
         <div className="comment__edit">
-          <textarea className="form-group__textarea form-group__textarea--sm" value={content} onChange={e => setContent(e.target.value)} rows={3} />
+          <textarea className="form-group__textarea form-group__textarea--sm" value={content} onChange={event => setContent(event.target.value)} rows={3} maxLength={2000} />
           <div className="comment__edit-actions">
-            <button className="btn btn--primary btn--sm" onClick={handleSave} disabled={saving}>{saving ? 'Kaydediliyor…' : 'Kaydet'}</button>
-            <button className="btn btn--ghost btn--sm" onClick={() => { setEditing(false); setContent(comment.content); }}>İptal</button>
+            <button className="btn btn--primary btn--sm" onClick={handleSave} disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</button>
+            <button className="btn btn--ghost btn--sm" onClick={() => { setEditing(false); setContent(comment.content); }}>Iptal</button>
           </div>
         </div>
       ) : (
@@ -137,13 +152,13 @@ function CommentItem({ comment, postId, onDelete, onReply, isReply = false }) {
 
       <div className="comment__actions">
         {user && !isReply && (
-          <button className="btn btn--ghost btn--xs" onClick={() => onReply?.({ id: comment.id, username: comment.author_username })}>Yanıtla</button>
+          <button className="btn btn--ghost btn--xs" onClick={() => onReply?.({ id: comment.id, username: comment.author_username })}>Yanitla</button>
         )}
         {isOwner && !editing && (
-          <button className="btn btn--ghost btn--xs" onClick={() => setEditing(true)}>Düzenle</button>
+          <button className="btn btn--ghost btn--xs" onClick={() => setEditing(true)}>Duzenle</button>
         )}
         {(isOwner || isMod) && (
-          <button className="btn btn--ghost btn--xs btn--danger-ghost" onClick={handleDelete} disabled={deleting}>{deleting ? '…' : 'Sil'}</button>
+          <button className="btn btn--ghost btn--xs btn--danger-ghost" onClick={handleDelete} disabled={deleting}>{deleting ? '...' : 'Sil'}</button>
         )}
       </div>
     </article>
@@ -153,15 +168,16 @@ function CommentItem({ comment, postId, onDelete, onReply, isReply = false }) {
 function CommentForm({ postId, replyTo, onCancelReply, onPosted }) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const [error, setError] = useState('');
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
     if (!content.trim()) return;
     setLoading(true);
     setError('');
+
     try {
-      await commentsApi.create(postId, { content, parent_id: replyTo?.id || null });
+      await commentsApi.create(postId, { content: content.trim(), parent_id: replyTo?.id || null });
       setContent('');
       onPosted?.();
     } catch (err) {
@@ -175,15 +191,24 @@ function CommentForm({ postId, replyTo, onCancelReply, onPosted }) {
     <form className="comment-form" onSubmit={submit} noValidate>
       {replyTo && (
         <div className="comment-form__reply-banner">
-          <span>@{replyTo.username} kullanıcısına yanıt veriliyor</span>
-          <button type="button" className="btn btn--ghost btn--xs" onClick={onCancelReply}>✕</button>
+          <span>@{replyTo.username} kullanicisina yanit veriliyor</span>
+          <button type="button" className="btn btn--ghost btn--xs" onClick={onCancelReply}>Kapat</button>
         </div>
       )}
       {error && <p className="comment-form__error" role="alert">{error}</p>}
-      <textarea className="form-group__textarea" rows={3} value={content} onChange={e => setContent(e.target.value)} placeholder="{{yorum_icerigi}}" aria-label="Yorum içeriği" />
+      <textarea
+        className="form-group__textarea"
+        rows={3}
+        value={content}
+        onChange={event => setContent(event.target.value)}
+        placeholder="Yorumunuzu yazin"
+        aria-label="Yorum icerigi"
+        maxLength={2000}
+      />
       <button type="submit" className="btn btn--primary btn--sm" disabled={loading || !content.trim()}>
-        {loading ? 'Gönderiliyor…' : replyTo ? 'Yanıtla' : 'Yorum Yap'}
+        {loading ? 'Gonderiliyor...' : replyTo ? 'Yanitla' : 'Yorum yap'}
       </button>
     </form>
   );
 }
+

@@ -1,60 +1,107 @@
 'use strict';
 
-const { upload, uploadToCloudinary } = require('../upload');
 const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
 
-const Post  = require('../models/Post');
+const { upload, uploadToCloudinary } = require('../upload');
+const Post = require('../models/Post');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
+const { getDb } = require('../config/db');
+
+const MAX_LIMIT = 50;
+const SORTS = new Set(['newest', 'popular', 'discussed']);
 
 const postRules = [
-  body('title').trim().isLength({ min: 3, max: 200 }).withMessage('Başlık 3–200 karakter olmalıdır.'),
-  body('content').trim().isLength({ min: 10 }).withMessage('İçerik en az 10 karakter olmalıdır.'),
-  body('media_url').optional({ nullable: true }).isURL().withMessage('Geçerli bir URL girin.'),
+  body('title')
+    .trim()
+    .isLength({ min: 3, max: 200 })
+    .withMessage('Baslik 3-200 karakter arasinda olmalidir.'),
+  body('content')
+    .trim()
+    .isLength({ min: 10, max: 20000 })
+    .withMessage('Icerik 10-20000 karakter arasinda olmalidir.'),
+  body('media_url')
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .isURL({ protocols: ['http', 'https'], require_protocol: true })
+    .withMessage('Gecerli bir http veya https URL girin.'),
 ];
 
 function validate(req, res, next) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(422).json({ success: false, message: 'Doğrulama hatası.', errors: errors.array().map(e => ({ field: e.path, message: e.msg })) });
+    return res.status(422).json({
+      success: false,
+      message: 'Dogrulama hatasi.',
+      errors: errors.array().map(error => ({ field: error.path, message: error.msg })),
+    });
   }
   next();
 }
 
+function parsePositiveInt(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseBoolean(value) {
+  return value === '1' || value === 'true' || value === true;
+}
+
+function cleanSearch(value) {
+  return String(value || '').trim().slice(0, 120);
+}
+
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
-    const limit    = parseInt(req.query.limit, 10)  || 20;
-    const offset   = parseInt(req.query.offset, 10) || 0;
-    const authorId = req.query.author_id ? parseInt(req.query.author_id, 10) : undefined;
-    const search   = req.query.search || '';
+    const limit = Math.min(parsePositiveInt(req.query.limit) || 20, MAX_LIMIT);
+    const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
+    const authorId = req.query.author_id ? parsePositiveInt(req.query.author_id) : undefined;
+    const search = cleanSearch(req.query.search);
+    const sort = SORTS.has(req.query.sort) ? req.query.sort : 'newest';
+    const hasMedia = parseBoolean(req.query.has_media);
 
-    const posts = await Post.list({ limit, offset, authorId, search });
-    const total = await Post.count({ authorId, search });
+    if (req.query.author_id && !authorId) {
+      return res.status(422).json({ success: false, message: 'Gecersiz yazar kimligi.' });
+    }
 
-    return res.json({ success: true, data: { posts, pagination: { total, limit, offset, hasMore: offset + limit < total } } });
+    const filters = { limit, offset, authorId, search, sort, hasMedia };
+    const posts = await Post.list(filters);
+    const total = await Post.count(filters);
+
+    return res.json({
+      success: true,
+      data: {
+        posts,
+        pagination: {
+          total,
+          limit,
+          offset,
+          hasMore: offset + limit < total,
+        },
+      },
+    });
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/', requireAuth, upload.single('image'), async (req, res, next) => {
+router.post('/', requireAuth, upload.single('image'), postRules, validate, async (req, res, next) => {
   try {
-    const { title, content } = req.body;
-    let media_url = req.body.media_url || null;
+    const title = req.body.title.trim();
+    const content = req.body.content.trim();
+    let media_url = req.body.media_url?.trim() || null;
 
     if (req.file) {
       media_url = await uploadToCloudinary(req.file.buffer);
     }
 
-    if (!title || title.trim().length < 3) {
-      return res.status(422).json({ success: false, message: 'Başlık 3–200 karakter olmalıdır.' });
-    }
-    if (!content || content.trim().length < 10) {
-      return res.status(422).json({ success: false, message: 'İçerik en az 10 karakter olmalıdır.' });
-    }
-
     const post = await Post.create({ title, content, media_url, author_id: req.user.id });
-    return res.status(201).json({ success: true, message: 'Gönderi başarıyla paylaşıldı.', data: { post } });
+    return res.status(201).json({
+      success: true,
+      message: 'Gonderi basariyla paylasildi.',
+      data: { post },
+    });
   } catch (err) {
     next(err);
   }
@@ -62,10 +109,14 @@ router.post('/', requireAuth, upload.single('image'), async (req, res, next) => 
 
 router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
-    const post = await Post.findById(parseInt(req.params.id, 10));
-    if (!post) return res.status(404).json({ success: false, message: 'Gönderi bulunamadı.' });
-    Post.incrementView(post.id);
-    return res.json({ success: true, data: { post } });
+    const postId = parsePositiveInt(req.params.id);
+    if (!postId) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+
+    await Post.incrementView(post.id);
+    return res.json({ success: true, data: { post: { ...post, view_count: Number(post.view_count || 0) + 1 } } });
   } catch (err) {
     next(err);
   }
@@ -73,13 +124,22 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 
 router.put('/:id', requireAuth, postRules, validate, async (req, res, next) => {
   try {
-    const postId = parseInt(req.params.id, 10);
-    const post   = await Post.findById(postId);
-    if (!post) return res.status(404).json({ success: false, message: 'Gönderi bulunamadı.' });
-    if (post.author_id !== req.user.id) return res.status(403).json({ success: false, message: 'Bu gönderiyi düzenleme yetkiniz yok.' });
-    const { title, content, media_url } = req.body;
-    const updated = await Post.update(postId, req.user.id, { title, content, media_url });
-    return res.json({ success: true, message: 'Gönderi güncellendi.', data: { post: updated } });
+    const postId = parsePositiveInt(req.params.id);
+    if (!postId) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+    if (post.author_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Bu gonderiyi duzenleme yetkiniz yok.' });
+    }
+
+    const updated = await Post.update(postId, req.user.id, {
+      title: req.body.title.trim(),
+      content: req.body.content.trim(),
+      media_url: req.body.media_url?.trim() || null,
+    });
+
+    return res.json({ success: true, message: 'Gonderi guncellendi.', data: { post: updated } });
   } catch (err) {
     next(err);
   }
@@ -87,41 +147,61 @@ router.put('/:id', requireAuth, postRules, validate, async (req, res, next) => {
 
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const postId = parseInt(req.params.id, 10);
-    const post   = await Post.findById(postId);
-    if (!post) return res.status(404).json({ success: false, message: 'Gönderi bulunamadı.' });
+    const postId = parsePositiveInt(req.params.id);
+    if (!postId) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+
     const isOwner = post.author_id === req.user.id;
-    const isMod   = ['moderator', 'admin'].includes(req.user.role);
-    if (!isOwner && !isMod) return res.status(403).json({ success: false, message: 'Bu gönderiyi silme yetkiniz yok.' });
+    const isMod = ['moderator', 'admin'].includes(req.user.role);
+    if (!isOwner && !isMod) {
+      return res.status(403).json({ success: false, message: 'Bu gonderiyi silme yetkiniz yok.' });
+    }
+
     await Post.remove(postId, post.author_id);
-    return res.json({ success: true, message: 'Gönderi silindi.' });
+    return res.json({ success: true, message: 'Gonderi silindi.' });
   } catch (err) {
     next(err);
   }
 });
 
 router.post('/:id/like', requireAuth, async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id, 10);
-    const pool = require('../config/db').getDb();
+  const postId = parsePositiveInt(req.params.id);
+  if (!postId) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
 
-    const check = await pool.query(
+  const post = await Post.findById(postId);
+  if (!post) return res.status(404).json({ success: false, message: 'Gonderi bulunamadi.' });
+
+  const pool = getDb();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const check = await client.query(
       'SELECT id FROM post_likes WHERE post_id = $1 AND user_id = $2',
       [postId, req.user.id]
     );
 
     if (check.rows.length > 0) {
-      await pool.query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [postId, req.user.id]);
-      await pool.query('UPDATE posts SET like_count = like_count - 1 WHERE id = $1', [postId]);
+      await client.query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [postId, req.user.id]);
+      await client.query('UPDATE posts SET like_count = GREATEST(like_count - 1, 0) WHERE id = $1', [postId]);
+      await client.query('COMMIT');
       return res.json({ success: true, liked: false });
-    } else {
-      await pool.query('INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)', [postId, req.user.id]);
-      await pool.query('UPDATE posts SET like_count = like_count + 1 WHERE id = $1', [postId]);
-      return res.json({ success: true, liked: true });
     }
+
+    await client.query('INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)', [postId, req.user.id]);
+    await client.query('UPDATE posts SET like_count = like_count + 1 WHERE id = $1', [postId]);
+    await client.query('COMMIT');
+    return res.json({ success: true, liked: true });
   } catch (err) {
+    await client.query('ROLLBACK');
     next(err);
+  } finally {
+    client.release();
   }
 });
 
 module.exports = router;
+

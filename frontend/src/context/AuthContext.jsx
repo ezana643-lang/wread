@@ -4,10 +4,10 @@ import { authApi } from '../api/client';
 const AuthContext = createContext(null);
 
 const initialState = {
-  user:    null,
-  token:   localStorage.getItem('wread_token') || null,
+  user: null,
+  token: localStorage.getItem('wread_token') || null,
   loading: true,
-  error:   null,
+  error: null,
 };
 
 function reducer(state, action) {
@@ -31,13 +31,15 @@ export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
-    if (!state.token) {
+    const token = localStorage.getItem('wread_token');
+
+    if (!token) {
       dispatch({ type: 'INIT_DONE' });
       return;
     }
 
     authApi.me()
-      .then(res => dispatch({ type: 'AUTH_SUCCESS', user: res.data.user, token: state.token }))
+      .then(res => dispatch({ type: 'AUTH_SUCCESS', user: res.data.user, token }))
       .catch(() => {
         localStorage.removeItem('wread_token');
         dispatch({ type: 'LOGOUT' });
@@ -61,7 +63,11 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
-    try { await authApi.logout(); } catch (_) {}
+    try {
+      await authApi.logout();
+    } catch (_) {
+      // The local session should still be cleared if the server is unreachable.
+    }
     localStorage.removeItem('wread_token');
     dispatch({ type: 'LOGOUT' });
   }
@@ -75,6 +81,7 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth, AuthProvider içinde kullanılmalıdır.');
+  if (!ctx) throw new Error('useAuth AuthProvider icinde kullanilmalidir.');
   return ctx;
 }
+

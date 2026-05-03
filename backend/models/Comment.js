@@ -5,9 +5,9 @@ const { getDb } = require('../config/db');
 const COMMENT_WITH_AUTHOR = `
   SELECT
     c.*,
-    u.username      AS author_username,
-    u.display_name  AS author_display_name,
-    u.avatar_url    AS author_avatar_url
+    u.username AS author_username,
+    u.display_name AS author_display_name,
+    u.avatar_url AS author_avatar_url
   FROM comments c
   JOIN users u ON u.id = c.author_id
 `;
@@ -28,9 +28,9 @@ async function listByPost(postId) {
     [postId]
   );
 
-  const all   = res.rows;
+  const all = res.rows;
   const roots = [];
-  const byId  = {};
+  const byId = {};
 
   for (const comment of all) {
     byId[comment.id] = { ...comment, replies: [] };
@@ -60,9 +60,14 @@ async function create({ content, post_id, author_id, parent_id }) {
   const pool = getDb();
 
   if (parent_id) {
-    const parent = await pool.query('SELECT post_id FROM comments WHERE id = $1', [parent_id]);
-    if (!parent.rows[0] || parent.rows[0].post_id !== post_id) {
-      const err = new Error('Geçersiz üst yorum.');
+    const parent = await pool.query(
+      'SELECT post_id, parent_id, is_hidden FROM comments WHERE id = $1',
+      [parent_id]
+    );
+    const parentRow = parent.rows[0];
+
+    if (!parentRow || parentRow.post_id !== post_id || parentRow.is_hidden || parentRow.parent_id) {
+      const err = new Error('Gecersiz ust yorum.');
       err.status = 400;
       throw err;
     }
@@ -91,3 +96,4 @@ async function remove(id, authorId) {
 }
 
 module.exports = { findById, listByPost, countByPost, create, update, remove };
+

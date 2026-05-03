@@ -6,22 +6,35 @@ function errorHandler(err, req, res, _next) {
   if (err.type === 'validation') {
     return res.status(422).json({
       success: false,
-      message: 'Doğrulama hatası.',
-      errors:  err.errors,
+      message: 'Dogrulama hatasi.',
+      errors: err.errors,
     });
   }
 
-  if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      success: false,
+      message: 'Gorsel en fazla 5 MB olabilir.',
+    });
+  }
+
+  if (err.code === '23505' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
     return res.status(409).json({
       success: false,
-      message: 'Bu kayıt zaten mevcut.',
+      message: 'Bu kayit zaten mevcut.',
     });
   }
 
-  const status  = err.status || err.statusCode || 500;
-  const message = err.message || 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.';
+  const status = err.status || err.statusCode || 500;
+  const message = err.message || 'Sunucu hatasi. Lutfen daha sonra tekrar deneyin.';
 
-  console.error('[HATA]', { status, message, stack: isDev ? err.stack : undefined });
+  console.error('[ERROR]', {
+    method: req.method,
+    path: req.originalUrl,
+    status,
+    message,
+    stack: isDev ? err.stack : undefined,
+  });
 
   return res.status(status).json({
     success: false,
@@ -31,3 +44,4 @@ function errorHandler(err, req, res, _next) {
 }
 
 module.exports = { errorHandler };
+
